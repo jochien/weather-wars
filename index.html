@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weather Wars</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app">
+    <section class="hud">
+      <div class="brand">
+        <p class="eyebrow">Tiny Browser Artillery</p>
+        <h1>Weather Wars</h1>
+        <p class="subtitle">Launch storms from the cloud. Break the enemy castle before yours collapses.</p>
+      </div>
+
+      <div class="scoreboard" aria-label="Castle health">
+        <article class="score-card player">
+          <p class="label">Your castle</p>
+          <p class="value" id="player-hp">30</p>
+        </article>
+        <article class="score-card enemy">
+          <p class="label">Enemy castle</p>
+          <p class="value" id="enemy-hp">30</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="play-area">
+      <div class="controls-panel">
+        <div class="control-group">
+          <p class="group-title">Attack</p>
+          <div class="attack-list" id="attack-list" role="radiogroup" aria-label="Attack type"></div>
+        </div>
+
+        <div class="control-group">
+          <div class="angle-row">
+            <p class="group-title">Angle</p>
+            <p class="angle-value"><span id="angle-value">135</span>&deg;</p>
+          </div>
+          <input id="angle-slider" type="range" min="0" max="180" step="1" value="135" aria-label="Shot angle">
+          <p class="hint">0&deg; right, 90&deg; down, 180&deg; left</p>
+        </div>
+
+        <div class="button-row">
+          <button id="fire-button" class="primary">Fire</button>
+          <button id="help-button">Help</button>
+          <button id="restart-button">Restart</button>
+        </div>
+
+        <div class="turn-card">
+          <p class="label">Turn</p>
+          <p class="value" id="turn-status">Your move</p>
+        </div>
+
+        <div class="log-card" aria-live="polite">
+          <p class="label">Battle log</p>
+          <p id="message-log">Choose an attack, set an angle, and fire from the cloud.</p>
+        </div>
+      </div>
+
+      <div class="game-shell">
+        <canvas id="game" width="960" height="540" aria-label="Weather Wars game field"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="help-dialog">
+    <form method="dialog" class="help-content">
+      <h2>How to play</h2>
+      <p>Every shot starts at the cloud near the top of the arena.</p>
+      <ul>
+        <li><strong>1-4</strong>: choose Lightning, Hail, Sun beam, or Super Rain</li>
+        <li><strong>Left/Right</strong>: adjust angle by 1 degree</li>
+        <li><strong>Space</strong>: fire</li>
+        <li><strong>H</strong>: toggle this help</li>
+      </ul>
+      <p>Damage the enemy castle blocks before the enemy destroys yours.</p>
+      <button value="close" autofocus>Close</button>
+    </form>
+  </dialog>
+
+  <script src="main.js"></script>
+</body>
+</html>
