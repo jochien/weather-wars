@@ -6,6 +6,7 @@ A tiny, dependency-free browser aiming game you can run locally.
 
 - Open `index.html` in a browser (double-click it).
 - Or serve the folder with any static server if you prefer.
+- The game is fully client-side and has no external dependencies.
 
 ## How to play
 
