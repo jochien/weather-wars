@@ -82,6 +82,10 @@ const CLOUD = {
   speed: 0.00022,
 };
 const GRAVITY = 240;
+const CASTLE_ART_SOURCES = {
+  player: "assets/castle-player.png",
+  enemy: "assets/castle-enemy.png",
+};
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -96,6 +100,66 @@ const playerHpEl = document.getElementById("player-hp");
 const enemyHpEl = document.getElementById("enemy-hp");
 const turnStatusEl = document.getElementById("turn-status");
 const messageLogEl = document.getElementById("message-log");
+const castleArt = {
+  player: createCastleArt(CASTLE_ART_SOURCES.player),
+  enemy: createCastleArt(CASTLE_ART_SOURCES.enemy),
+};
+const SCENERY_BLUEPRINTS = [
+  {
+    type: "tree",
+    x: 324,
+    y: GROUND_Y - 50,
+    width: 34,
+    height: 58,
+    hp: 2,
+    variant: 0,
+  },
+  {
+    type: "sheep",
+    x: 392,
+    y: GROUND_Y - 18,
+    width: 26,
+    height: 18,
+    hp: 1,
+    variant: 0,
+  },
+  {
+    type: "villager",
+    x: 456,
+    y: GROUND_Y - 30,
+    width: 18,
+    height: 30,
+    hp: 1,
+    variant: 1,
+  },
+  {
+    type: "tree",
+    x: 520,
+    y: GROUND_Y - 54,
+    width: 36,
+    height: 62,
+    hp: 2,
+    variant: 1,
+  },
+  {
+    type: "sheep",
+    x: 590,
+    y: GROUND_Y - 17,
+    width: 24,
+    height: 17,
+    hp: 1,
+    variant: 1,
+  },
+  {
+    type: "villager",
+    x: 650,
+    y: GROUND_Y - 32,
+    width: 16,
+    height: 32,
+    hp: 1,
+    variant: 0,
+  },
+];
 
 const state = {
   angle: 135,
@@ -121,6 +185,7 @@ const state = {
     player: [],
     enemy: [],
   },
+  scenery: [],
 };
 
 function createCastle(side, x) {
@@ -146,6 +211,21 @@ function createCastle(side, x) {
   return blocks;
 }
 
+function createCastleArt(src) {
+  const image = new Image();
+  image.src = src;
+  return image;
+}
+
+function createScenery() {
+  return SCENERY_BLUEPRINTS.map((item) => ({
+    ...item,
+    maxHp: item.hp,
+    alive: true,
+    scorch: 0,
+  }));
+}
+
 function resetGame() {
   state.angle = 135;
   state.selectedAttack = 0;
@@ -164,6 +244,7 @@ function resetGame() {
   state.wind.nextShiftAt = performance.now() + randomBetween(2600, 4800);
   state.castles.player = createCastle("player", PLAYER_CASTLE_X);
   state.castles.enemy = createCastle("enemy", ENEMY_CASTLE_X);
+  state.scenery = createScenery();
   syncUi();
 }
 
@@ -286,6 +367,7 @@ function startSuperRain(side, chosenAngle, attackIndex) {
     waterHeight: 0,
     maxWaterHeight,
     totalHits: { player: 0, enemy: 0 },
+    sceneryHits: 0,
     drops: createRainDrops(attack.drops),
   };
   state.message = `${side === "player" ? "You call" : "Enemy calls"} Super Rain over a wide zone.`;
@@ -367,6 +449,8 @@ function updateWeatherEffect(deltaSeconds) {
     if (totalHits > 0) {
       const label = effect.totalHits.enemy > 0 ? "enemy" : "your";
       finalMessage = `Super Rain floods the ${label} castle, eroding ${totalHits} block${totalHits === 1 ? "" : "s"}.`;
+    } else if (effect.sceneryHits > 0) {
+      finalMessage = `Super Rain wrecks ${effect.sceneryHits} field target${effect.sceneryHits === 1 ? "" : "s"} between the castles.`;
     }
     state.weatherEffect = null;
     state.message = finalMessage;
@@ -397,6 +481,24 @@ function erodeCastleWithFlood(effect) {
       }
     });
   });
+
+  state.scenery.forEach((item) => {
+    if (!item.alive) {
+      return;
+    }
+    const itemLeft = item.x;
+    const itemRight = item.x + item.width;
+    const itemBottom = item.y + item.height;
+    const overlapsFlood = itemRight >= left && itemLeft <= right;
+    const touchesWater = itemBottom >= waterTop;
+    if (overlapsFlood && touchesWater) {
+      const previousAlive = item.alive;
+      damageSceneryItem(item, 1);
+      if (previousAlive && !item.alive) {
+        effect.sceneryHits += 1;
+      }
+    }
+  });
 }
 
 function getFloodMaxHeight() {
@@ -407,6 +509,7 @@ function getFloodMaxHeight() {
 
 function damageCastle(side, impactX, impactY, attack, travelDirection) {
   const targets = state.castles[side];
+  const topRowY = Math.min(...targets.map((block) => block.y));
 
   if (attack.id === "lightning") {
     return damageCastleWithLightning(targets, impactX, impactY, attack);
@@ -426,6 +529,9 @@ function damageCastle(side, impactX, impactY, attack, travelDirection) {
     const candidates = targets
       .filter((block) => {
         if (block.hp <= 0) {
+          return false;
+        }
+        if (attack.id === "hail" && block.y !== topRowY) {
           return false;
         }
 
@@ -547,6 +653,7 @@ function explode(x, y, projectile) {
   const travelDirection = Math.sign(projectile.vx) || (projectile.side === "player" ? 1 : -1);
   const enemyHits = damageCastle("enemy", x, y, attack, travelDirection);
   const playerHits = damageCastle("player", x, y, attack, travelDirection);
+  const sceneryHits = damageScenery(x, y, attack, travelDirection);
   if (attack.id === "hail") {
     const castleSnow = findCastleSurfaceEffects(x, y, attack, 46);
     state.lingeringEffects.push({
@@ -602,6 +709,8 @@ function explode(x, y, projectile) {
     impactMessage = attack.id === "lightning"
       ? `${attack.name} punches through the ${label} castle, damaging ${enemyHits + playerHits} block${enemyHits + playerHits === 1 ? "" : "s"}.`
       : `${attack.name} tears into the ${label} castle for ${enemyHits + playerHits} hit${enemyHits + playerHits === 1 ? "" : "s"}.`;
+  } else if (sceneryHits > 0) {
+    impactMessage = `${attack.name} tears through ${sceneryHits} field target${sceneryHits === 1 ? "" : "s"} between the castles.`;
   } else {
     impactMessage = `${attack.name} misses both castles.`;
   }
@@ -618,6 +727,16 @@ function hitLiveBlock(x, y) {
       && x <= block.x + block.width
       && y >= block.y
       && y <= block.y + block.height
+  ));
+}
+
+function hitLiveScenery(x, y) {
+  return state.scenery.find((item) => (
+    item.alive
+      && x >= item.x
+      && x <= item.x + item.width
+      && y >= item.y
+      && y <= item.y + item.height
   ));
 }
 
@@ -638,10 +757,11 @@ function updateProjectile(deltaSeconds) {
   projectile.vy += GRAVITY * deltaSeconds;
 
   const hitBlock = hitLiveBlock(projectile.x, projectile.y);
+  const hitScenery = hitLiveScenery(projectile.x, projectile.y);
   const outOfBounds = projectile.x < -40 || projectile.x > canvas.width + 40 || projectile.y > canvas.height + 60;
   const hitGround = projectile.y >= GROUND_Y;
 
-  if (hitBlock || outOfBounds || hitGround) {
+  if (hitBlock || hitScenery || outOfBounds || hitGround) {
     const impactY = Math.min(projectile.y, GROUND_Y);
     const impactX = Math.max(0, Math.min(canvas.width, projectile.x));
     const impactProjectile = projectile;
@@ -709,6 +829,105 @@ function burnCastleWithFire(effect) {
       }
     });
   });
+
+  state.scenery.forEach((item) => {
+    if (!item.alive) {
+      return;
+    }
+    const itemLeft = item.x;
+    const itemRight = item.x + item.width;
+    const itemBottom = item.y + item.height;
+    const overlapsFire = itemRight >= left && itemLeft <= right;
+    const touchesFire = itemBottom >= GROUND_Y - 20;
+    if (overlapsFire && touchesFire) {
+      damageSceneryItem(item, effect.damage);
+    }
+  });
+}
+
+function damageScenery(impactX, impactY, attack, travelDirection) {
+  if (attack.id === "lightning") {
+    return damageSceneryWithLightning(impactX, attack);
+  }
+
+  const strikeXs = [];
+  let totalHits = 0;
+
+  for (let pellet = 0; pellet < attack.pellets; pellet += 1) {
+    const offset = attack.pellets === 1
+      ? 0
+      : randomBetween(-attack.pelletScatter, attack.pelletScatter);
+    strikeXs.push(impactX + offset);
+  }
+
+  strikeXs.forEach((strikeX) => {
+    const candidates = state.scenery
+      .filter((item) => {
+        if (!item.alive) {
+          return false;
+        }
+        const cx = item.x + (item.width / 2);
+        const cy = item.y + (item.height / 2);
+        const withinWidth = Math.abs(cx - strikeX) <= ((attack.impactWidth / 2) + (item.width / 2));
+        const withinHeight = Math.abs(cy - impactY) <= (item.height + 26);
+        return withinWidth && withinHeight;
+      })
+      .sort((left, right) => {
+        const entryDelta = travelDirection >= 0
+          ? left.x - right.x
+          : right.x - left.x;
+        return entryDelta !== 0 ? entryDelta : left.y - right.y;
+      });
+
+    const depthLimit = attack.id === "hail" ? Math.min(2, candidates.length) : Math.min(attack.penetration, candidates.length);
+    for (let depth = 0; depth < depthLimit; depth += 1) {
+      const item = candidates[depth];
+      const wasAlive = item.alive;
+      damageSceneryItem(item, Math.max(1, attack.baseDamage - depth));
+      if (wasAlive && !item.alive) {
+        totalHits += 1;
+      }
+    }
+  });
+
+  return totalHits;
+}
+
+function damageSceneryWithLightning(impactX, attack) {
+  let hits = 0;
+  state.scenery.forEach((item) => {
+    if (!item.alive) {
+      return;
+    }
+    const struck = segmentIntersectsExpandedRect(
+      state.cloud.x,
+      state.cloud.y + 10,
+      impactX,
+      GROUND_Y,
+      item.x,
+      item.y,
+      item.width,
+      item.height,
+      attack.impactWidth / 2,
+    );
+    if (!struck) {
+      return;
+    }
+    const wasAlive = item.alive;
+    damageSceneryItem(item, attack.baseDamage);
+    if (wasAlive && !item.alive) {
+      hits += 1;
+    }
+  });
+  return hits;
+}
+
+function damageSceneryItem(item, amount) {
+  item.hp = Math.max(0, item.hp - amount);
+  item.scorch = clamp(item.scorch + (amount * 0.35), 0, 1);
+  if (item.hp <= 0) {
+    item.alive = false;
+  }
 }
 
 function findCastleSurfaceEffects(impactX, impactY, attack, heightPadding) {
@@ -894,6 +1113,14 @@ function drawBackground() {
 
   ctx.fillStyle = "#d49e52";
   ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+
+  ctx.fillStyle = "rgba(196, 152, 83, 0.36)";
+  for (let index = 0; index < 5; index += 1) {
+    const moundX = 280 + (index * 90);
+    ctx.beginPath();
+    ctx.ellipse(moundX, GROUND_Y + 6, 54, 10, 0, Math.PI, 0, true);
+    ctx.fill();
+  }
 
   ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
   drawCloud(180, 84, 24);
@@ -1175,13 +1402,140 @@ function drawCloud(x, y, radius) {
 
 function drawCastle(side) {
   const blocks = state.castles[side];
-  const liveBlocks = blocks.filter((block) => block.hp > 0);
+  const layout = getCastleLayout(side);
+  const image = castleArt[side];
+
+  ctx.save();
+
+  if (image.complete && image.naturalWidth > 0) {
+    drawCastleArt(side, layout, image);
+  } else {
+    drawProceduralCastle(side, layout);
+  }
+
+  drawCastleDamageOverlay(side, layout);
+
+  ctx.restore();
+}
+
+function getCastleLayout(side) {
+  const blocks = state.castles[side];
   const blockXs = blocks.map((block) => block.x);
   const blockYs = blocks.map((block) => block.y);
   const minX = Math.min(...blockXs);
   const maxX = Math.max(...blockXs) + BLOCK_WIDTH;
   const minY = Math.min(...blockYs);
   const totalWidth = maxX - minX;
+  const leftTowerX = minX - 10;
+  const rightTowerX = maxX - 24;
+  const towerTopY = minY - 54;
+  const towerWidth = 48;
+  const towerHeight = 134;
+  const wallX = minX - 2;
+  const wallY = minY - 18;
+  const wallWidth = totalWidth + 4;
+  const wallHeight = 92;
+  const gateX = minX + ((totalWidth - 42) / 2);
+  const gateY = CASTLE_Y + 46;
+  const baseX = minX - 22;
+  const baseY = CASTLE_Y + 78;
+  const baseWidth = totalWidth + 44;
+  const baseHeight = 28;
+  return {
+    minX,
+    maxX,
+    minY,
+    totalWidth,
+    leftTowerX,
+    rightTowerX,
+    towerTopY,
+    towerWidth,
+    towerHeight,
+    wallX,
+    wallY,
+    wallWidth,
+    wallHeight,
+    gateX,
+    gateY,
+    baseX,
+    baseY,
+    baseWidth,
+    baseHeight,
+  };
+}
+
+function drawCastleArt(side, layout, image) {
+  const crop = side === "player"
+    ? { x: 118, y: 148, width: image.naturalWidth - 236, height: image.naturalHeight - 288 }
+    : { x: 105, y: 122, width: image.naturalWidth - 210, height: image.naturalHeight - 250 };
+  const destWidth = 236;
+  const destHeight = 190;
+  const destX = layout.minX - 54;
+  const destY = layout.towerTopY + 8;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+  ctx.fillRect(destX + 16, layout.baseY + layout.baseHeight - 4, destWidth - 32, 7);
+  ctx.drawImage(image, crop.x, crop.y, crop.width, crop.height, destX, destY, destWidth, destHeight);
+
+  const wash = ctx.createLinearGradient(0, destY, 0, destY + destHeight);
+  wash.addColorStop(0, side === "player" ? "rgba(255, 216, 153, 0.04)" : "rgba(214, 232, 247, 0.05)");
+  wash.addColorStop(1, side === "player" ? "rgba(89, 42, 15, 0.14)" : "rgba(24, 38, 58, 0.12)");
+  ctx.fillStyle = wash;
+  ctx.fillRect(destX, destY, destWidth, destHeight);
+  ctx.restore();
+}
+
+function drawCastleDamageOverlay(side, layout) {
+  const blocks = state.castles[side];
+
+  blocks.forEach((block) => {
+    const damageRatio = block.hp / block.maxHp;
+    if (damageRatio >= 1) {
+      return;
+    }
+
+    if (block.hp <= 0) {
+      const voidGradient = ctx.createLinearGradient(block.x, block.y, block.x, block.y + block.height);
+      voidGradient.addColorStop(0, "rgba(8, 18, 34, 0.88)");
+      voidGradient.addColorStop(1, "rgba(24, 42, 63, 0.78)");
+      ctx.fillStyle = voidGradient;
+      ctx.fillRect(block.x + 1, block.y + 1, block.width - 2, block.height - 2);
+
+      ctx.fillStyle = "rgba(80, 55, 34, 0.65)";
+      ctx.beginPath();
+      ctx.moveTo(block.x + 2, block.y + block.height - 4);
+      ctx.lineTo(block.x + 10, block.y + block.height - 10);
+      ctx.lineTo(block.x + 18, block.y + block.height - 6);
+      ctx.lineTo(block.x + 28, block.y + block.height - 11);
+      ctx.lineTo(block.x + block.width - 3, block.y + block.height - 4);
+      ctx.lineTo(block.x + block.width - 3, block.y + block.height - 1);
+      ctx.lineTo(block.x + 2, block.y + block.height - 1);
+      ctx.closePath();
+      ctx.fill();
+      return;
+    }
+
+    ctx.fillStyle = `rgba(46, 28, 18, ${(1 - damageRatio) * 0.16})`;
+    ctx.fillRect(block.x + 1, block.y + 1, block.width - 2, block.height - 2);
+
+    ctx.strokeStyle = `rgba(76, 34, 18, ${0.22 + ((1 - damageRatio) * 0.45)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(block.x + 6, block.y + 4);
+    ctx.lineTo(block.x + 16, block.y + 15);
+    ctx.lineTo(block.x + 11, block.y + 24);
+    ctx.lineTo(block.x + 24, block.y + 30);
+    ctx.moveTo(block.x + 22, block.y + 6);
+    ctx.lineTo(block.x + 14, block.y + 14);
+    ctx.lineTo(block.x + 26, block.y + 20);
+    ctx.stroke();
+  });
+
+}
+
+function drawProceduralCastle(side, layout) {
+  const liveBlocks = state.castles[side].filter((block) => block.hp > 0);
   const direction = side === "player" ? 1 : -1;
   const stoneBase = side === "player" ? "#7bccef" : "#aeb7c2";
   const stoneShade = side === "player" ? "#3f86ae" : "#6f7b88";
@@ -1189,57 +1543,41 @@ function drawCastle(side) {
   const trim = side === "player" ? "#d7f6ff" : "#e9eef5";
   const banner = side === "player" ? "#4dd8ff" : "#8f9aaa";
 
-  ctx.save();
-
-  const baseX = minX - 22;
-  const baseY = CASTLE_Y + 78;
-  const baseWidth = totalWidth + 44;
-  const baseHeight = 28;
-  const baseGradient = ctx.createLinearGradient(baseX, baseY, baseX, baseY + baseHeight);
+  const baseGradient = ctx.createLinearGradient(layout.baseX, layout.baseY, layout.baseX, layout.baseY + layout.baseHeight);
   baseGradient.addColorStop(0, side === "player" ? "#4e89a8" : "#8b949f");
   baseGradient.addColorStop(1, side === "player" ? "#2d5364" : "#5f6771");
   ctx.fillStyle = baseGradient;
-  ctx.fillRect(baseX, baseY, baseWidth, baseHeight);
+  ctx.fillRect(layout.baseX, layout.baseY, layout.baseWidth, layout.baseHeight);
   ctx.fillStyle = side === "player" ? "rgba(210, 247, 255, 0.14)" : "rgba(244, 247, 252, 0.14)";
-  ctx.fillRect(baseX, baseY, baseWidth, 4);
+  ctx.fillRect(layout.baseX, layout.baseY, layout.baseWidth, 4);
   ctx.fillStyle = "rgba(0, 0, 0, 0.16)";
-  ctx.fillRect(baseX, baseY + baseHeight - 5, baseWidth, 5);
+  ctx.fillRect(layout.baseX, layout.baseY + layout.baseHeight - 5, layout.baseWidth, 5);
 
-  const leftTowerX = minX - 10;
-  const rightTowerX = maxX - 24;
-  const towerTopY = minY - 54;
-  const towerWidth = 48;
-  const towerHeight = 134;
-  drawTower(leftTowerX, towerTopY, towerWidth, towerHeight, stoneBase, stoneShade, mortar, trim, banner, direction, true);
-  drawTower(rightTowerX, towerTopY, towerWidth, towerHeight, stoneBase, stoneShade, mortar, trim, banner, direction, false);
-
-  drawWallMass(minX - 2, minY - 18, totalWidth + 4, 92, stoneBase, stoneShade, mortar, trim);
+  drawTower(layout.leftTowerX, layout.towerTopY, layout.towerWidth, layout.towerHeight, stoneBase, stoneShade, mortar, trim, banner, direction, true);
+  drawTower(layout.rightTowerX, layout.towerTopY, layout.towerWidth, layout.towerHeight, stoneBase, stoneShade, mortar, trim, banner, direction, false);
+  drawWallMass(layout.wallX, layout.wallY, layout.wallWidth, layout.wallHeight, stoneBase, stoneShade, mortar, trim);
 
   liveBlocks.forEach((block) => {
     drawDetailedBlock(block, mortar, trim);
   });
 
-  const gateX = minX + ((totalWidth - 42) / 2);
-  const gateY = CASTLE_Y + 46;
-  drawGate(gateX, gateY, 42, 58, side === "player" ? "#214659" : "#48515b", trim);
+  drawGate(layout.gateX, layout.gateY, 42, 58, side === "player" ? "#214659" : "#48515b", trim);
 
   const bridgeY = CASTLE_Y + 50;
   ctx.strokeStyle = side === "player" ? "#9feeff" : "#ffdca7";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(leftTowerX + towerWidth - 8, bridgeY);
-  ctx.lineTo(rightTowerX + 8, bridgeY);
+  ctx.moveTo(layout.leftTowerX + layout.towerWidth - 8, bridgeY);
+  ctx.lineTo(layout.rightTowerX + 8, bridgeY);
   ctx.stroke();
   ctx.strokeStyle = "rgba(0,0,0,0.18)";
   ctx.beginPath();
-  ctx.moveTo(leftTowerX + towerWidth - 8, bridgeY + 6);
-  ctx.lineTo(rightTowerX + 8, bridgeY + 6);
+  ctx.moveTo(layout.leftTowerX + layout.towerWidth - 8, bridgeY + 6);
+  ctx.lineTo(layout.rightTowerX + 8, bridgeY + 6);
   ctx.stroke();
 
-  const pennantX = side === "player" ? leftTowerX + 18 : rightTowerX + 30;
-  drawPennant(pennantX, towerTopY - 10, banner, direction);
-
-  ctx.restore();
+  const pennantX = side === "player" ? layout.leftTowerX + 18 : layout.rightTowerX + 30;
+  drawPennant(pennantX, layout.towerTopY - 10, banner, direction);
 }
 
 function drawWallMass(x, y, width, height, stoneBase, stoneShade, mortar, trim) {
@@ -1584,6 +1922,140 @@ function drawProjectile() {
   ctx.restore();
 }
 
+function drawScenery() {
+  state.scenery.forEach((item) => {
+    if (item.type === "tree") {
+      drawTree(item);
+      return;
+    }
+    if (item.type === "sheep") {
+      drawSheep(item);
+      return;
+    }
+    drawVillager(item);
+  });
+}
+
+function drawTree(item) {
+  if (!item.alive) {
+    ctx.fillStyle = "rgba(88, 58, 28, 0.9)";
+    ctx.fillRect(item.x + 8, item.y + item.height - 14, item.width - 10, 6);
+    ctx.strokeStyle = "rgba(57, 33, 16, 0.8)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(item.x + 12, item.y + item.height - 6);
+    ctx.lineTo(item.x + item.width - 4, item.y + item.height - 18);
+    ctx.stroke();
+    return;
+  }
+
+  ctx.fillStyle = "#6d4a2b";
+  ctx.fillRect(item.x + 12, item.y + 24, 8, item.height - 24);
+  ctx.fillStyle = item.variant === 0 ? "#4f8f3c" : "#5a9b45";
+  ctx.beginPath();
+  ctx.arc(item.x + 17, item.y + 20, 16, 0, Math.PI * 2);
+  ctx.arc(item.x + 10, item.y + 28, 12, 0, Math.PI * 2);
+  ctx.arc(item.x + 24, item.y + 30, 13, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (item.scorch > 0) {
+    ctx.fillStyle = `rgba(48, 23, 10, ${item.scorch * 0.5})`;
+    ctx.beginPath();
+    ctx.arc(item.x + 18, item.y + 25, 18, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawSheep(item) {
+  if (!item.alive) {
+    ctx.fillStyle = "rgba(142, 22, 18, 0.58)";
+    ctx.beginPath();
+    ctx.ellipse(item.x + 12, item.y + item.height - 1, 11, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(78, 58, 40, 0.88)";
+    ctx.beginPath();
+    ctx.ellipse(item.x + 12, item.y + item.height - 5, 10, 4, 0.12, 0, Math.PI * 2);
+    ctx.ellipse(item.x + 19, item.y + item.height - 6, 7, 3.5, -0.25, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(95, 72, 54, 0.95)";
+    ctx.beginPath();
+    ctx.arc(item.x + item.width - 6, item.y + item.height - 6, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
+  ctx.fillStyle = "#f4f0e6";
+  ctx.beginPath();
+  ctx.ellipse(item.x + 12, item.y + 10, 10, 7, 0, 0, Math.PI * 2);
+  ctx.ellipse(item.x + 18, item.y + 9, 8, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#5f4936";
+  ctx.beginPath();
+  ctx.arc(item.x + item.width - 5, item.y + 9, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(item.x + 6, item.y + 14, 2, 4);
+  ctx.fillRect(item.x + 12, item.y + 14, 2, 4);
+  ctx.fillRect(item.x + 18, item.y + 14, 2, 4);
+
+  if (item.scorch > 0) {
+    ctx.fillStyle = `rgba(62, 33, 15, ${item.scorch * 0.45})`;
+    ctx.beginPath();
+    ctx.ellipse(item.x + 14, item.y + 10, 11, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawVillager(item) {
+  if (!item.alive) {
+    ctx.fillStyle = "rgba(150, 18, 18, 0.54)";
+    ctx.beginPath();
+    ctx.ellipse(item.x + 8, item.y + item.height - 1, 8, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = item.variant === 0 ? "rgba(51, 102, 177, 0.9)" : "rgba(177, 79, 51, 0.9)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(item.x + 3, item.y + item.height - 5);
+    ctx.lineTo(item.x + 13, item.y + item.height - 9);
+    ctx.moveTo(item.x + 7, item.y + item.height - 8);
+    ctx.lineTo(item.x + 12, item.y + item.height - 2);
+    ctx.moveTo(item.x + 7, item.y + item.height - 8);
+    ctx.lineTo(item.x + 3, item.y + item.height - 1);
+    ctx.stroke();
+
+    ctx.fillStyle = "#d8b495";
+    ctx.beginPath();
+    ctx.arc(item.x + 13, item.y + item.height - 10, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
+  ctx.fillStyle = "#f0d3b1";
+  ctx.beginPath();
+  ctx.arc(item.x + 8, item.y + 6, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = item.variant === 0 ? "#3366b1" : "#b14f33";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(item.x + 8, item.y + 10);
+  ctx.lineTo(item.x + 8, item.y + 22);
+  ctx.moveTo(item.x + 2, item.y + 15);
+  ctx.lineTo(item.x + 14, item.y + 14);
+  ctx.moveTo(item.x + 8, item.y + 22);
+  ctx.lineTo(item.x + 3, item.y + item.height);
+  ctx.moveTo(item.x + 8, item.y + 22);
+  ctx.lineTo(item.x + 13, item.y + item.height);
+  ctx.stroke();
+
+  if (item.scorch > 0) {
+    ctx.strokeStyle = `rgba(62, 24, 10, ${item.scorch * 0.5})`;
+    ctx.beginPath();
+    ctx.moveTo(item.x + 8, item.y + 10);
+    ctx.lineTo(item.x + 8, item.y + 24);
+    ctx.stroke();
+  }
+}
+
 function drawExplosion() {
   if (!state.activeExplosion) {
     return;
@@ -1643,6 +2115,7 @@ function render() {
   drawAimGuide();
   drawWeatherEffect();
   drawLingeringEffects("ground");
+  drawScenery();
   drawCastle("player");
   drawCastle("enemy");
   drawLingeringEffects("castle");
