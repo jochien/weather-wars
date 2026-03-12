@@ -18,7 +18,7 @@ A tiny, dependency-free browser aiming game you can run locally.
 ### Actions
 
 - **Lightning**: narrow, accurate, deeply penetrating, and now leaves a short-lived fire effect after impact.
-- **Hail**: very wide surface attack made of many small pellets. It spreads across the outer face of the castle and leaves snow behind briefly on the ground and on the castle surface.
+- **Hail**: very wide surface attack made of many small pellets. It now only damages the top row of castle blocks and leaves snow behind briefly on the ground and on the castle surface.
 - **Sun beam**: a long directed beam with medium spread and medium penetration that leaves a short-lived burning patch where it lands.
 - **Super Rain**: an ultra-wide rainstorm that pours from the cloud for a few seconds, creates a rising puddle/flood, and erodes castle blocks touched by the water. The flood only rises high enough to threaten the bottom row of castle blocks.
 
@@ -26,7 +26,8 @@ A tiny, dependency-free browser aiming game you can run locally.
 
 - The cloud is not stationary. It drifts across the sky, and all attacks launch from its current position.
 - Wind now shifts smoothly over time. It affects cloud motion and projectile drift, and the current wind direction/speed is shown in the in-canvas HUD.
-- Castle graphics are more detailed and show visible damage as blocks weaken.
+- Castles now use image-based artwork for each side and show visible damage as blocks weaken.
+- The space between castles includes destructible scenery such as trees, livestock, and villagers that can be wiped out by attacks.
 - Some attacks leave temporary visual after-effects:
   - **Hail** leaves snow on the ground and on impacted castle surfaces for a short time.
   - **Lightning** and **Sun beam** can leave lingering fire effects.
@@ -52,3 +53,4 @@ A tiny, dependency-free browser aiming game you can run locally.
 - `index.html`: layout + UI
 - `styles.css`: styling
 - `main.js`: game logic + canvas rendering
+- `assets/`: castle artwork used by the canvas renderer
